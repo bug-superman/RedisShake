@@ -9,11 +9,9 @@ import (
 	"RedisShake/internal/utils"
 	"RedisShake/internal/writer"
 	"fmt"
-	"os"
-	"strconv"
-	"testing"
-
 	"github.com/mcuadros/go-defaults"
+	"os"
+	"testing"
 
 	"github.com/go-redis/redis"
 )
@@ -113,73 +111,43 @@ func TestMainFunction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to Redis: %v", err)
 	}
+
 	fmt.Println("Connected to Redis:", pong)
-
-	for i := 1; i <= 10000; i++ {
-		key := strconv.Itoa(i)
-		value, err := client.Get(key).Result()
-		if err != nil {
-			fmt.Printf("Failed to read key %v from Redis: %v\n", key, err)
-			return
-		}
-		if value != key {
-			fmt.Printf("Mismatch: expected %v but got %v for key %v\n", key, value, key)
-		}
+	// 验证恢复是否完全一致
+	expected := map[string]string{
+		//"kl":    "kl",
+		"key0":  "2022-03-29 17:25:54.592593",
+		"key1":  "2022-03-29 17:25:54.876326",
+		"key2":  "2022-03-29 17:25:52.871918",
+		"key3":  "2022-03-29 17:25:53.034060",
+		"key4":  "2022-03-29 17:25:53.196913",
+		"key5":  "2022-03-29 17:25:53.356234",
+		"key6":  "2022-03-29 17:25:53.513544",
+		"key7":  "2022-03-29 17:25:53.671556",
+		"key8":  "2022-03-29 17:25:53.861237",
+		"key9":  "2022-03-29 17:25:54.020518",
+		"key10": "2022-03-29 17:25:54.177881",
+		"key11": "2022-03-29 17:25:54.337640",
 	}
 
-	for i := 1; i <= 10000; i++ {
-		key := strconv.Itoa(i)
-		value, err := client.HGet("mymap", key).Result()
+	for key, value := range expected {
+		fmt.Printf("key:%v", key)
+		result, err := client.Get(key).Result()
 		if err != nil {
-			fmt.Printf("Failed to read field %v from hash: %v\n", key, err)
-			return
+			t.Fatalf("Failed to read key %s from Redis: %v", key, err)
 		}
-		if value != key {
-			fmt.Printf("Mismatch: expected %v but got %v for field %v in hash\n", key, value, key)
+
+		if result != value {
+			t.Errorf("Value for key %s is incorrect. Expected: %s, Got: %s", key, value, result)
 		}
 	}
-
-	for i := 0; i < 10000; i++ {
-		value, err := client.LIndex("mylist", int64(i)).Result()
-		if err != nil {
-			fmt.Printf("Failed to read index %v from list: %v\n", i, err)
-			return
-		}
-		expected := strconv.Itoa(i + 1)
-		if value != expected {
-			fmt.Printf("Mismatch: expected %v but got %v at index %v in list\n", expected, value, i)
-		}
-	}
-
-	for i := 1; i <= 10000; i++ {
-		expected := strconv.Itoa(i)
-		score, err := client.ZScore("myzset", expected).Result()
-		if err != nil {
-			fmt.Printf("Failed to read member %v from sorted set: %v\n", expected, err)
-			return
-		}
-		if score != float64(i) {
-			fmt.Printf("Mismatch: expected rank %v but got %v for member %v in sorted set\n", i-1, score, expected)
-		}
-	}
-
-	messages, err := client.XRead(&redis.XReadArgs{
-		Streams: []string{"mystream", "0"},
-		Block:   0,
-		Count:   10000,
-	}).Result()
-
+	result, err := client.DbSize().Result()
+	fmt.Printf("result number:%v\n", result)
 	if err != nil {
-		fmt.Println("Failed to read from stream:", err)
-		return
+		t.Fatalf("Failed DBSize %v", err)
 	}
-
-	for i, message := range messages[0].Messages {
-		expected := strconv.Itoa(i + 1)
-		value, _ := message.Values["value"].(string)
-		if value != expected {
-			fmt.Printf("Mismatch: expected %v but got %v in stream\n", expected, value)
-		}
+	if result != int64(len(expected)) {
+		t.Fatalf("the number not equal")
 	}
 
 }
