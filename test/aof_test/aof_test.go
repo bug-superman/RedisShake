@@ -115,15 +115,70 @@ func TestMainFunction(t *testing.T) {
 	}
 	fmt.Println("Connected to Redis:", pong)
 
-	for key := 11; key <= 10000; key++ {
-		result, err := client.LIndex("mylist", int64(key-11)).Result()
+	for i := 1; i <= 10000; i++ {
+		key := strconv.Itoa(i)
+		value, err := client.Get(key).Result()
 		if err != nil {
-			fmt.Printf("Failed to read index %v from Redis list: %v\n", key-11, err)
+			fmt.Printf("Failed to read key %v from Redis: %v\n", key, err)
 			return
 		}
+		if value != key {
+			fmt.Printf("Mismatch: expected %v but got %v for key %v\n", key, value, key)
+		}
+	}
 
-		if result != strconv.Itoa(key) {
-			fmt.Printf("Value at index %v is incorrect. Expected: %v, Got: %v\n", key-11, key, result)
+	for i := 1; i <= 10000; i++ {
+		key := strconv.Itoa(i)
+		value, err := client.HGet("mymap", key).Result()
+		if err != nil {
+			fmt.Printf("Failed to read field %v from hash: %v\n", key, err)
+			return
+		}
+		if value != key {
+			fmt.Printf("Mismatch: expected %v but got %v for field %v in hash\n", key, value, key)
+		}
+	}
+
+	for i := 0; i < 10000; i++ {
+		value, err := client.LIndex("mylist", int64(i)).Result()
+		if err != nil {
+			fmt.Printf("Failed to read index %v from list: %v\n", i, err)
+			return
+		}
+		expected := strconv.Itoa(i + 1)
+		if value != expected {
+			fmt.Printf("Mismatch: expected %v but got %v at index %v in list\n", expected, value, i)
+		}
+	}
+
+	for i := 1; i <= 10000; i++ {
+		expected := strconv.Itoa(i)
+		score, err := client.ZScore("myzset", expected).Result()
+		if err != nil {
+			fmt.Printf("Failed to read member %v from sorted set: %v\n", expected, err)
+			return
+		}
+		if score != float64(i) {
+			fmt.Printf("Mismatch: expected rank %v but got %v for member %v in sorted set\n", i-1, score, expected)
+		}
+	}
+
+	messages, err := client.XRead(&redis.XReadArgs{
+		Streams: []string{"mystream", "0"},
+		Block:   0,
+		Count:   10000,
+	}).Result()
+
+	if err != nil {
+		fmt.Println("Failed to read from stream:", err)
+		return
+	}
+
+	for i, message := range messages[0].Messages {
+		expected := strconv.Itoa(i + 1)
+		value, _ := message.Values["value"].(string)
+		if value != expected {
+			fmt.Printf("Mismatch: expected %v but got %v in stream\n", expected, value)
 		}
 	}
 

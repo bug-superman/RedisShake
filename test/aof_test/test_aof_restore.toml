@@ -19,10 +19,11 @@ function = ""
 # [rdb_reader]
 # filepath = "/tmp/dump.rdb"
 [aof_reader]
-filepath = "/tmp/.aof"
-#timestamp = 1648545951
+# filepath = "/tmp/.aof"
+# timestamp = 0
+# filterdangerousCommands="no"
 [redis_writer]
-cluster = false            # set to true if target is a redis cluster
+cluster = false      # set to true if target is a redis cluster
 address = "127.0.0.1:6379" # when cluster is true, set address to one of the cluster node
 username = ""              # keep empty if not using ACL
 password = ""              # keep empty if no authentication is required

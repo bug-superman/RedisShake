@@ -906,7 +906,7 @@ func GetBaseAndIncrAppendOnlyFilesNum(am *AOFManifest) int {
 	return num
 }
 
-func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFTimeStamp int64) int {
+func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFTimeStamp int64, FilterDangerousCommands string) int {
 	if am == nil {
 		log.Panicf("AOFManifest is null")
 	}
@@ -954,7 +954,7 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 			BaseSize = GetAppendOnlyFileSize(AOFName, nil)
 			lastFile = totalNum
 			start = Ustime()
-			ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, false, AOFTimeStamp)
+			ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, false, AOFTimeStamp, FilterDangerousCommands)
 			if ret == AOFOK || (ret == AOFTruncated && lastFile == 1) {
 				log.Infof("DB loaded from Base File %v: %.3f seconds", AOFName, float64(Ustime()-start)/1000000)
 			}
@@ -1001,9 +1001,9 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 			AOFNum++
 			start = Ustime()
 			if lastFile == 1 {
-				ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, true, AOFTimeStamp)
+				ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, true, AOFTimeStamp, FilterDangerousCommands)
 			} else {
-				ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, false, AOFTimeStamp)
+				ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, false, AOFTimeStamp, FilterDangerousCommands)
 			}
 			if ret == AOFOK || (ret == AOFTruncated && lastFile == 1) {
 				log.Infof("DB loaded from incr File %v: %.3f seconds", AOFName, float64(Ustime()-start)/1000000)
@@ -1037,9 +1037,10 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 
 }
 
-func (ld *Loader) ParsingSingleAppendOnlyFile(FileName string, ch chan *entry.Entry, LastFile bool, AOFTimeStamp int64) int {
+func (ld *Loader) ParsingSingleAppendOnlyFile(FileName string, ch chan *entry.Entry, LastFile bool, AOFTimeStamp int64, FilterDangerousCommands string) int {
 	ret := AOFOK
 	AOFFilepath := path.Join(AOFFileInfo.AOFDirName, FileName)
+	println(AOFFilepath)
 	fp, err := os.Open(AOFFilepath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1074,7 +1075,7 @@ func (ld *Loader) ParsingSingleAppendOnlyFile(FileName string, ch chan *entry.En
 		return AOFOK
 		//Skipped RDB checksum and has not been processed yet.
 	}
-	ret = aof.LoadSingleAppendOnlyFile(AOFFileInfo.AOFDirName, FileName, ld.ch, LastFile, AOFTimeStamp)
+	ret = aof.LoadSingleAppendOnlyFile(AOFFileInfo.AOFDirName, FileName, ld.ch, LastFile, AOFTimeStamp, FilterDangerousCommands)
 	return ret
 
 }
