@@ -9,5 +9,5 @@ dist/
 tmp/
 data/
 *.log
-*.rdb
-*.aof
+#*.rdb
+#*.aof

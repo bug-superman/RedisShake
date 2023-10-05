@@ -60,6 +60,15 @@ func main() {
 		}
 		theReader = reader.NewRDBReader(opts)
 		log.Infof("create RdbReader: %v", opts.Filepath)
+	} else if v.IsSet("aof_reader") { // 修改aof reader
+		opts := new(reader.AOFReaderOptions)
+		defaults.SetDefaults(opts)
+		err := v.UnmarshalKey("rdb_reader", opts)
+		if err != nil {
+			log.Panicf("failed to read the AOFReader config entry. err: %v", err)
+		}
+		theReader = reader.NewAOFReader(opts)
+		log.Infof("create AOFReader: %v", opts.Filepath)
 	} else {
 		log.Panicf("no reader config entry found")
 	}
