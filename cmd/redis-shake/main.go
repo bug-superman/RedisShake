@@ -8,9 +8,8 @@ import (
 	"RedisShake/internal/status"
 	"RedisShake/internal/utils"
 	"RedisShake/internal/writer"
-	_ "net/http/pprof"
-
 	"github.com/mcuadros/go-defaults"
+	_ "net/http/pprof"
 )
 
 func main() {
@@ -61,7 +60,7 @@ func main() {
 		}
 		theReader = reader.NewRDBReader(opts)
 		log.Infof("create RdbReader: %v", opts.Filepath)
-	} else if v.IsSet("aof_reader") { // 修改aof reader
+	} else if v.IsSet("aof_reader") { 
 		opts := new(reader.AOFReaderOptions)
 		defaults.SetDefaults(opts)
 		err := v.UnmarshalKey("aof_reader", opts)

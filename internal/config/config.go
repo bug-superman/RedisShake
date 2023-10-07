@@ -3,12 +3,11 @@ package config
 import (
 	"RedisShake/internal/log"
 	"fmt"
-	"os"
-	"strings"
-
 	"github.com/mcuadros/go-defaults"
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
+	"os"
+	"strings"
 )
 
 type AdvancedOptions struct {

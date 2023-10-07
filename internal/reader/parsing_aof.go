@@ -45,8 +45,6 @@ const (
 	AOFManifestKeyFileType  = "type"
 )
 
-var RDBFileBeingLoaded string = ""
-
 func Ustime() int64 {
 	tv := time.Now()
 	ust := int64(tv.UnixNano()) / 1000
@@ -55,14 +53,14 @@ func Ustime() int64 {
 }
 
 func StringNeedsRepr(s string) int {
-	len := len(s)
+	sLen := len(s)
 	point := 0
-	for len > 0 {
+	for sLen > 0 {
 		if s[point] == '\\' || s[point] == '"' || s[point] == '\n' || s[point] == '\r' ||
 			s[point] == '\t' || s[point] == '\a' || s[point] == '\b' || !unicode.IsPrint(rune(s[point])) || unicode.IsSpace(rune(s[point])) {
 			return 1
 		}
-		len--
+		sLen--
 		point++
 	}
 
@@ -71,20 +69,20 @@ func StringNeedsRepr(s string) int {
 
 type INFO struct {
 	AOFDirName         string
-	AOFUseRDBPreamble  int
+	AOFUseRDBPreamble  int // not support parsing rdb preamble
 	AOFManifest        *AOFManifest
 	AOFFileName        string
 	AOFCurrentSize     int64
 	AOFRewriteBaseSize int64
+	updateLoadingFile  string
+	ch                 chan *entry.Entry
 }
 
-var AOFFileInfo INFO
-
-func (a *INFO) GetAOFDirName() string {
-	return a.AOFDirName
+func (manifestInfo *INFO) GetAOFDirName() string {
+	return manifestInfo.AOFDirName
 }
 
-func NewAOFFileInfo(aofFilePath string) *INFO {
+func NewAOFFileInfo(aofFilePath string, ch chan *entry.Entry) *INFO {
 	return &INFO{
 		AOFDirName:         filepath.Dir(aofFilePath),
 		AOFUseRDBPreamble:  0,
@@ -92,50 +90,8 @@ func NewAOFFileInfo(aofFilePath string) *INFO {
 		AOFFileName:        filepath.Base(aofFilePath),
 		AOFCurrentSize:     0,
 		AOFRewriteBaseSize: 0,
+		ch:                 ch,
 	}
-}
-
-func (a *INFO) SetAOFDirName(DirName string) {
-	a.AOFDirName = DirName
-}
-
-func (a *INFO) GetAOFUseRDBPreamble() int {
-	return a.AOFUseRDBPreamble
-}
-
-func (a *INFO) SetAOFUseRDBPreamble(useRDBPreamble int) {
-	a.AOFUseRDBPreamble = useRDBPreamble
-}
-
-func (a *INFO) GetAOFManifest() *AOFManifest {
-	return a.AOFManifest
-}
-func (a *INFO) SetAOFManifest(manifest *AOFManifest) {
-	a.AOFManifest = manifest
-}
-
-func (a *INFO) GetAOFFileName() string {
-	return a.AOFFileName
-}
-
-func (a *INFO) SetAOFFileName(FileName string) {
-	a.AOFFileName = FileName
-}
-
-func (a *INFO) GetAOFCurrentSize() int64 {
-	return a.AOFCurrentSize
-}
-
-func (a *INFO) SetAOFCurrentSize(size int64) {
-	a.AOFCurrentSize = size
-}
-
-func (a *INFO) GetAOFRewriteBaseSize() int64 {
-	return a.AOFRewriteBaseSize
-}
-
-func (a *INFO) SetAOFRewriteBaseSize(size int64) {
-	a.AOFRewriteBaseSize = size
 }
 
 type listIter struct {
@@ -210,24 +166,24 @@ func ListsRewindTail(list *lists, li *listIter) {
 }
 
 func ListDup(orig *lists) *lists {
-	var copy *lists
+	var copyDup *lists
 	var iter listIter
 	var node *listNode
-	copy = ListCreate()
-	if copy == nil {
+	copyDup = ListCreate()
+	if copyDup == nil {
 		return nil
 	}
-	copy.ListsRewind(&iter)
+	copyDup.ListsRewind(&iter)
 	node = ListNext(&iter)
 	var value interface{}
 	for node != nil {
 		value = node.value
 	}
 
-	if ListAddNodeTail(copy, value) == nil {
+	if ListAddNodeTail(copyDup, value) == nil {
 		return nil
 	}
-	return copy
+	return copyDup
 }
 
 func ListIndex(list *lists, index int64) *listNode {
@@ -290,19 +246,6 @@ func ListUnlinkNode(list *lists, node *listNode) {
 }
 func ListDelNode(list *lists, node *listNode) {
 	ListUnlinkNode(list, node)
-
-}
-
-type Loader struct {
-	filPath string
-	ch      chan *entry.Entry
-}
-
-func NewLoader(filPath string, ch chan *entry.Entry) *Loader {
-	ld := new(Loader)
-	ld.ch = ch
-	ld.filPath = filPath
-	return ld
 }
 
 func (a *AOFInfo) GetAOFInfoName() string {
@@ -379,7 +322,7 @@ func SplitArgs(line string) ([]string, int) {
 	i := 0
 	lens := len(p)
 	for { //SKIP BLANKS
-		for i < lens && unicode.IsSpace((rune(p[i]))) {
+		for i < lens && unicode.IsSpace(rune(p[i])) {
 			i++
 		}
 		if i < lens {
@@ -394,8 +337,8 @@ func SplitArgs(line string) ([]string, int) {
 						_, err1 := strconv.ParseInt(string(p[i+2]), 16, 64)
 						_, err2 := strconv.ParseInt(string(p[i+3]), 16, 64)
 						if err1 == nil && err2 == nil {
-							int16 := (HexDigitToInt((p[i+2])) * 16) + HexDigitToInt(p[i+3])
-							Current = Current + fmt.Sprint(int16)
+							hexadecimal := (HexDigitToInt((p[i+2])) * 16) + HexDigitToInt(p[i+3])
+							Current = Current + fmt.Sprint(hexadecimal)
 							i += 3
 						}
 
@@ -414,7 +357,7 @@ func SplitArgs(line string) ([]string, int) {
 						}
 						Current += string(c)
 					} else if p[i] == '"' {
-						if i+1 < lens && !unicode.IsSpace((rune(p[i+1]))) {
+						if i+1 < lens && !unicode.IsSpace(rune(p[i+1])) {
 							return nil, 0
 						}
 						done = true
@@ -428,7 +371,7 @@ func SplitArgs(line string) ([]string, int) {
 						i++
 						Current += "'"
 					} else if p[i] == '\'' {
-						if i+1 < lens && !unicode.IsSpace((rune(p[i+1]))) {
+						if i+1 < lens && !unicode.IsSpace(rune(p[i+1])) {
 							return nil, 0
 						}
 						done = true
@@ -469,21 +412,21 @@ func SplitArgs(line string) ([]string, int) {
 	}
 }
 
-func Stringcatlen(s string, t []byte, lent int) string {
-	curlen := len(s)
+func StringCatLen(s string, t []byte, lent int) string {
+	curLen := len(s)
 
-	if curlen == 0 {
+	if curLen == 0 {
 		return ""
 	}
 
-	buf := make([]byte, curlen+lent)
+	buf := make([]byte, curLen+lent)
 
-	copy(buf[:curlen], []byte(s))
-	copy(buf[curlen:], t)
+	copy(buf[:curLen], s)
+	copy(buf[curLen:], t)
 	return string(buf)
 }
 
-func Stringcatprintf(s string, fmtStr string, args ...interface{}) string {
+func StringCatPrintf(s string, fmtStr string, args ...interface{}) string {
 	result := fmt.Sprintf(fmtStr, args...)
 	if s == "" {
 		return result
@@ -492,12 +435,12 @@ func Stringcatprintf(s string, fmtStr string, args ...interface{}) string {
 	}
 }
 
-func Stringcatrepr(s string, p string, length int) string {
-	s = s + string("\"")
+func StringCatRepr(s string, p string, length int) string {
+	s = s + ("\"")
 	for i := 0; i < length; i++ {
 		switch p[i] {
 		case '\\', '"':
-			s = Stringcatprintf(s, "\\%c", p[i])
+			s = StringCatPrintf(s, "\\%c", p[i])
 		case '\n':
 			s = s + "\\n"
 		case '\r':
@@ -519,11 +462,11 @@ func Stringcatrepr(s string, p string, length int) string {
 	return s + "\""
 }
 
-func UpdateLoadingFileName(FileName string) {
-	RDBFileBeingLoaded = FileName
+func (manifestInfo *INFO) UpdateLoadingFileName(FileName string) {
+	manifestInfo.updateLoadingFile = FileName
 }
 
-/* AOF manifest definition */
+// AOFInfo AOF manifest definition
 type AOFInfo struct {
 	FileName    string
 	FileSeq     int64
@@ -534,7 +477,7 @@ func AOFInfoCreate() *AOFInfo {
 	return new(AOFInfo)
 }
 
-var AOF_Info AOFInfo = *AOFInfoCreate()
+var AofInfo AOFInfo = *AOFInfoCreate()
 
 func AOFInfoDup(orig *AOFInfo) *AOFInfo {
 	if orig == nil {
@@ -550,13 +493,13 @@ func AOFInfoDup(orig *AOFInfo) *AOFInfo {
 func AOFInfoFormat(buf string, ai *AOFInfo) string {
 	var AOFManifestcreate string
 	if StringNeedsRepr(ai.FileName) == 1 {
-		AOFManifestcreate = Stringcatrepr("", ai.FileName, len(ai.FileName))
+		AOFManifestcreate = StringCatRepr("", ai.FileName, len(ai.FileName))
 	}
 	var ret string
 	if AOFManifestcreate != "" {
-		ret = Stringcatprintf(buf, "%s %s %s %d %s %s\n", AOFManifestKeyFileName, AOFManifestcreate, AOFManifestKeyFileSeq, ai.FileSeq, AOFManifestKeyFileType, ai.AOFFileType)
+		ret = StringCatPrintf(buf, "%s %s %s %d %s %s\n", AOFManifestKeyFileName, AOFManifestcreate, AOFManifestKeyFileSeq, ai.FileSeq, AOFManifestKeyFileType, ai.AOFFileType)
 	} else {
-		ret = Stringcatprintf(buf, "%s %s %s %d %s %s\n", AOFManifestKeyFileName, ai.FileName, AOFManifestKeyFileSeq, ai.FileSeq, AOFManifestKeyFileType, ai.AOFFileType)
+		ret = StringCatPrintf(buf, "%s %s %s %d %s %s\n", AOFManifestKeyFileName, ai.FileName, AOFManifestKeyFileSeq, ai.FileSeq, AOFManifestKeyFileType, ai.AOFFileType)
 	}
 	return ret
 }
@@ -565,13 +508,14 @@ func PathIsBaseName(Path string) bool {
 	return strings.IndexByte(Path, '/') == -1 && strings.IndexByte(Path, '\\') == -1
 }
 
-func AOFLoadManifestFromFile(am_Filepath string) *AOFManifest {
+func AOFLoadManifestFromFile(amFilepath string) *AOFManifest {
 	var maxseq int64
 	am := AOFManifestcreate()
-	fp, err := os.Open(am_Filepath)
+	fp, err := os.Open(amFilepath)
 	if err != nil {
-		log.Panicf("Fatal error:can't open the AOF manifest %v for reading: %v", am_Filepath, err)
+		log.Panicf("Fatal error:can't open the AOF manifest %v for reading: %v", amFilepath, err)
 	}
+	defer fp.Close()
 	var argv []string
 	var ai *AOFInfo
 	var line string
@@ -621,8 +565,8 @@ func AOFLoadManifestFromFile(am_Filepath string) *AOFManifest {
 		ai = AOFInfoCreate()
 		for i := 0; i < argc; i += 2 {
 			if strings.EqualFold(argv[i], AOFManifestKeyFileName) {
-				ai.FileName = string(argv[i+1])
-				if !PathIsBaseName(string(ai.FileName)) {
+				ai.FileName = argv[i+1]
+				if !PathIsBaseName(ai.FileName) {
 					log.Panicf("File can't be a path, just a Filename")
 				}
 			} else if strings.EqualFold(argv[i], AOFManifestKeyFileSeq) {
@@ -655,7 +599,6 @@ func AOFLoadManifestFromFile(am_Filepath string) *AOFManifest {
 		line = " "
 		ai = nil
 	}
-	fp.Close()
 	return am
 }
 
@@ -735,7 +678,7 @@ func GetAOFManifestAsString(am *AOFManifest) string {
 
 }
 
-func GetNewBaseFileNameAndMarkPreAsHistory(am *AOFManifest) string {
+func (manifestInfo *INFO) GetNewBaseFileNameAndMarkPreAsHistory(am *AOFManifest) string {
 	if am == nil {
 		log.Panicf("AOFManifest is nil")
 	}
@@ -746,13 +689,13 @@ func GetNewBaseFileNameAndMarkPreAsHistory(am *AOFManifest) string {
 		am.BaseAOFInfo.AOFFileType = AOFManifestTypeHist
 	}
 	var formatSuffix string
-	if AOFFileInfo.AOFUseRDBPreamble == 1 {
+	if manifestInfo.AOFUseRDBPreamble == 1 {
 		formatSuffix = RDBFormatSuffix
 	} else {
 		formatSuffix = AOFFormatSuffix
 	}
 	ai := AOFInfoCreate()
-	ai.FileName = Stringcatprintf("%s.%d%s%d", AOF_Info.GetAOFInfoName(), am.CurrBaseFileSeq+1, BaseFileSuffix, formatSuffix)
+	ai.FileName = StringCatPrintf("%s.%d%s%d", AofInfo.GetAOFInfoName(), am.CurrBaseFileSeq+1, BaseFileSuffix, formatSuffix)
 	ai.FileSeq = am.CurrBaseFileSeq + 1
 	ai.AOFFileType = AOFManifestFileTypeBase
 	am.BaseAOFInfo = ai
@@ -760,90 +703,76 @@ func GetNewBaseFileNameAndMarkPreAsHistory(am *AOFManifest) string {
 	return am.BaseAOFInfo.FileName
 }
 
-func AOFLoadManifestFromDisk() {
-	AOFFileInfo.AOFManifest = AOFManifestcreate()
-	if DirExists(AOFFileInfo.AOFDirName) == 0 {
-		log.Infof("The AOF Directory %v doesn't exist\n", AOFFileInfo.AOFDirName)
+func (manifestInfo *INFO) AOFLoadManifestFromDisk() {
+	manifestInfo.AOFManifest = AOFManifestcreate()
+	if DirExists(manifestInfo.AOFDirName) == 0 {
+		log.Infof("The AOF Directory %v doesn't exist\n", manifestInfo.AOFDirName)
 		return
 	}
 
-	am_Name := GetAOFManifestFileName()
-	am_Filepath := path.Join(AOFFileInfo.AOFDirName, am_Name)
-	if FileExist(am_Filepath) == 0 {
-		log.Infof("The AOF Directory %v doesn't exist\n", AOFFileInfo.AOFDirName)
+	amName := manifestInfo.GetAOFManifestFileName()
+	amFilepath := path.Join(manifestInfo.AOFDirName, amName)
+	if FileExist(amFilepath) == 0 {
+		log.Infof("The AOF Directory %v doesn't exist\n", manifestInfo.AOFDirName)
 		return
 	}
 
-	am := AOFLoadManifestFromFile(am_Filepath)
+	am := AOFLoadManifestFromFile(amFilepath)
 	//if am != nil {
-	AOFFileInfo.AOFManifest = am
+	manifestInfo.AOFManifest = am
 	//}
 }
 
-func GetNewIncrAOFName(am *AOFManifest) string {
+func (manifestInfo *INFO) GetNewIncrAOFName(am *AOFManifest) string {
 	ai := AOFInfoCreate()
 	ai.AOFFileType = AOFManifestTypeIncr
-	ai.FileName = Stringcatprintf("", "%s.%d%s%s", AOFFileInfo.AOFFileName, am.CurrIncrFileSeq+1, IncrFileSuffix, AOFFormatSuffix)
+	ai.FileName = StringCatPrintf("", "%s.%d%s%s", manifestInfo.AOFFileName, am.CurrIncrFileSeq+1, IncrFileSuffix, AOFFormatSuffix)
 	ai.FileSeq = am.CurrIncrFileSeq + 1
 	ListAddNodeTail(am.incrAOFList, ai)
 	am.Dirty = 1
 	return ai.FileName
 }
 
-func GetTempIncrAOFNanme() string {
-	return Stringcatprintf("", "%s%s%s", TempFileNamePrefix, AOFFileInfo.AOFFileName, IncrFileSuffix)
+func (manifestInfo *INFO) GetTempIncrAOFName() string {
+	return StringCatPrintf("", "%s%s%s", TempFileNamePrefix, manifestInfo.AOFFileName, IncrFileSuffix)
 }
 
-func GetLastIncrAOFName(am *AOFManifest) string {
+func (manifestInfo *INFO) GetLastIncrAOFName(am *AOFManifest) string {
 	if am == nil {
 		log.Panicf(("AOFManifest is nil"))
 	}
 
 	if am.incrAOFList.len == 0 {
-		return GetNewIncrAOFName(am)
+		return manifestInfo.GetNewIncrAOFName(am)
 	}
 
 	lastnode := ListIndex(am.incrAOFList, -1)
 
 	ai, ok := lastnode.value.(AOFInfo)
 	if !ok {
-		log.Panicf("Failed to convert lastnode.value to AOFInfo")
+		log.Panicf("Failed to convert last node.value to AOFInfo")
 	}
 	return ai.FileName
 }
 
-func GetAOFManifestFileName() string {
-	return AOFFileInfo.AOFFileName
+func (manifestInfo *INFO) GetAOFManifestFileName() string {
+	return manifestInfo.AOFFileName
 }
 
-func GetTempAOFManifestFileName() string {
-	return Stringcatprintf("", "%s%s", TempFileNamePrefix, AOFFileInfo.AOFFileName)
+func (manifestInfo *INFO) GetTempAOFManifestFileName() string {
+	return StringCatPrintf("", "%s%s", TempFileNamePrefix, manifestInfo.AOFFileName)
 }
 
-func StartLoading(size int64, RDBflags int, async int) {
-	/* Load the DB */
-	log.Infof("The AOF File starts loading.\n")
-}
-
-func StopLoading(ret int) {
-
-	if ret == AOFOK || ret == AOFTruncated {
-		log.Infof("The AOF File was successfully loaded\n")
-	} else {
-		log.Infof("There was an error opening the AOF File.\n")
-	}
-}
-
-func AOFFileExist(FileName string) int {
-	Filepath := path.Join(AOFFileInfo.AOFDirName, FileName)
+func (manifestInfo *INFO) AOFFileExist(FileName string) int {
+	Filepath := path.Join(manifestInfo.AOFDirName, FileName)
 	ret := FileExist(Filepath)
 	return ret
 }
 
-func GetAppendOnlyFileSize(FileName string, status *int) int64 {
+func (manifestInfo *INFO) GetAppendOnlyFileSize(FileName string, status *int) int64 {
 	var size int64
 
-	AOFFilePath := path.Join(AOFFileInfo.AOFDirName, FileName)
+	AOFFilePath := path.Join(manifestInfo.AOFDirName, FileName)
 
 	stat, err := os.Stat(AOFFilePath)
 	if err != nil {
@@ -865,7 +794,7 @@ func GetAppendOnlyFileSize(FileName string, status *int) int64 {
 	return size
 }
 
-func GetBaseAndIncrAppendOnlyFilesSize(am *AOFManifest, status *int) int64 {
+func (manifestInfo *INFO) GetBaseAndIncrAppendOnlyFilesSize(am *AOFManifest, status *int) int64 {
 	var size int64
 	var ln *listNode = new(listNode)
 	var li *listIter = new(listIter)
@@ -873,7 +802,7 @@ func GetBaseAndIncrAppendOnlyFilesSize(am *AOFManifest, status *int) int64 {
 		if am.BaseAOFInfo.AOFFileType != AOFManifestFileTypeBase {
 			log.Panicf("File type must be Base.")
 		}
-		size += GetAppendOnlyFileSize(am.BaseAOFInfo.FileName, status)
+		size += manifestInfo.GetAppendOnlyFileSize(am.BaseAOFInfo.FileName, status)
 		if *status != AOFOK {
 			return 0
 		}
@@ -886,7 +815,7 @@ func GetBaseAndIncrAppendOnlyFilesSize(am *AOFManifest, status *int) int64 {
 		if ai.AOFFileType != AOFManifestTypeIncr {
 			log.Panicf("File type must be Incr")
 		}
-		size += GetAppendOnlyFileSize(ai.FileName, status)
+		size += manifestInfo.GetAppendOnlyFileSize(ai.FileName, status)
 		if *status != AOFOK {
 			return 0
 		}
@@ -906,7 +835,7 @@ func GetBaseAndIncrAppendOnlyFilesNum(am *AOFManifest) int {
 	return num
 }
 
-func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFTimeStamp int64, FilterDangerousCommands string) int {
+func (manifestInfo *INFO) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFTimeStamp int64, FilterDangerousCommands string) int {
 	if am == nil {
 		log.Panicf("AOFManifest is null")
 	}
@@ -918,11 +847,11 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 	var AOFName string
 	var totalNum, AOFNum, lastFile int
 
-	if AOFFileExist(AOFFileInfo.AOFFileName) == 1 {
-		if DirExists(AOFFileInfo.AOFDirName) == 0 ||
+	if manifestInfo.AOFFileExist(manifestInfo.AOFFileName) == 1 {
+		if DirExists(manifestInfo.AOFDirName) == 0 ||
 			(am.BaseAOFInfo == nil && am.incrAOFList.len == 0) ||
 			(am.BaseAOFInfo != nil && am.incrAOFList.len == 0 &&
-				strings.Compare(am.BaseAOFInfo.FileName, AOFFileInfo.AOFFileName) == 0 && AOFFileExist(AOFFileInfo.AOFFileName) == 0) {
+				strings.Compare(am.BaseAOFInfo.FileName, manifestInfo.AOFFileName) == 0 && manifestInfo.AOFFileExist(manifestInfo.AOFFileName) == 0) {
 			log.Panicf("This is an old version of the AOF File")
 		}
 	}
@@ -936,7 +865,7 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 		log.Panicf("Assertion failed: IncrAppendOnlyFilestotalNum > 0")
 	}
 
-	totalSize = GetBaseAndIncrAppendOnlyFilesSize(am, &status)
+	totalSize = manifestInfo.GetBaseAndIncrAppendOnlyFilesSize(am, &status)
 	if status != AOFOK {
 		if status == AOFNotExist {
 			status = AOFFailed
@@ -946,15 +875,19 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 		return AOFEmpty
 	}
 
-	StartLoading(totalSize, RDBFlagsAOFPreamble, 0)
+	log.Infof("The AOF File starts loading.\n")
 	if am.BaseAOFInfo != nil {
 		if am.BaseAOFInfo.AOFFileType == AOFManifestFileTypeBase {
-			AOFName = string(am.BaseAOFInfo.FileName)
-			UpdateLoadingFileName(AOFName)
-			BaseSize = GetAppendOnlyFileSize(AOFName, nil)
+			AOFName = am.BaseAOFInfo.FileName
+			manifestInfo.UpdateLoadingFileName(AOFName)
+			BaseSize = manifestInfo.GetAppendOnlyFileSize(AOFName, nil)
 			lastFile = totalNum
 			start = Ustime()
-			ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, false, AOFTimeStamp, FilterDangerousCommands)
+			if lastFile != 1 {
+				ret = manifestInfo.ParsingSingleAppendOnlyFile(AOFName, false, 0)
+			} else {
+				ret = manifestInfo.ParsingSingleAppendOnlyFile(AOFName, true, AOFTimeStamp)
+			}
 			if ret == AOFOK || (ret == AOFTruncated && lastFile == 1) {
 				log.Infof("DB loaded from Base File %v: %.3f seconds", AOFName, float64(Ustime()-start)/1000000)
 			}
@@ -996,14 +929,14 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 				log.Panicf("The manifestType must be Incr")
 			}
 			AOFName = ai.FileName
-			UpdateLoadingFileName(AOFName)
+			manifestInfo.UpdateLoadingFileName(AOFName)
 			lastFile = totalNum
 			AOFNum++
 			start = Ustime()
 			if lastFile == 1 {
-				ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, true, AOFTimeStamp, FilterDangerousCommands)
+				ret = manifestInfo.ParsingSingleAppendOnlyFile(AOFName, true, AOFTimeStamp)
 			} else {
-				ret = ld.ParsingSingleAppendOnlyFile(AOFName, ch, false, AOFTimeStamp, FilterDangerousCommands)
+				ret = manifestInfo.ParsingSingleAppendOnlyFile(AOFName, false, 0)
 			}
 			if ret == AOFOK || (ret == AOFTruncated && lastFile == 1) {
 				log.Infof("DB loaded from incr File %v: %.3f seconds", AOFName, float64(Ustime()-start)/1000000)
@@ -1031,15 +964,15 @@ func (ld *Loader) LoadAppendOnlyFile(am *AOFManifest, ch chan *entry.Entry, AOFT
 		totalNum--
 	}
 
-	AOFFileInfo.AOFCurrentSize = totalSize
-	AOFFileInfo.AOFRewriteBaseSize = BaseSize
+	manifestInfo.AOFCurrentSize = totalSize
+	manifestInfo.AOFRewriteBaseSize = BaseSize
 	return ret
 
 }
 
-func (ld *Loader) ParsingSingleAppendOnlyFile(FileName string, ch chan *entry.Entry, LastFile bool, AOFTimeStamp int64, FilterDangerousCommands string) int {
+func (manifestInfo *INFO) ParsingSingleAppendOnlyFile(FileName string, LastFile bool, AOFTimeStamp int64) int {
 	ret := AOFOK
-	AOFFilepath := path.Join(AOFFileInfo.AOFDirName, FileName)
+	AOFFilepath := path.Join(manifestInfo.AOFDirName, FileName)
 	println(AOFFilepath)
 	fp, err := os.Open(AOFFilepath)
 	if err != nil {
@@ -1053,13 +986,13 @@ func (ld *Loader) ParsingSingleAppendOnlyFile(FileName string, ch chan *entry.En
 			}
 
 		}
-		defer fp.Close()
 
 		stat, _ := fp.Stat()
 		if stat.Size() == 0 {
 			return AOFEmpty
 		}
 	}
+	defer fp.Close()
 	sig := make([]byte, 5)
 	if n, err := fp.Read(sig); err != nil || n != 5 || !bytes.Equal(sig, []byte("REDIS")) {
 		if _, err := fp.Seek(0, 0); err != nil {
@@ -1067,15 +1000,20 @@ func (ld *Loader) ParsingSingleAppendOnlyFile(FileName string, ch chan *entry.En
 			ret = AOFFailed
 			return ret
 		}
-	} else {
+	} else { //Skipped RDB checksum and has not been processed yet.
 		log.Infof("Reading RDB Base File on AOF loading...")
 		rdbOpt := RdbReaderOptions{Filepath: AOFFilepath}
 		ldRDB := NewRDBReader(&rdbOpt)
 		ldRDB.StartRead()
 		return AOFOK
-		//Skipped RDB checksum and has not been processed yet.
 	}
-	ret = aof.LoadSingleAppendOnlyFile(AOFFileInfo.AOFDirName, FileName, ld.ch, LastFile, AOFTimeStamp, FilterDangerousCommands)
+	// load single aof file
+	aofSingleReader := aof.NewLoader(MakePath(manifestInfo.AOFDirName, FileName), manifestInfo.ch)
+	ret = aofSingleReader.LoadSingleAppendOnlyFile(LastFile, AOFTimeStamp)
 	return ret
 
+}
+
+func MakePath(Paths string, FileName string) string {
+	return path.Join(Paths, FileName)
 }

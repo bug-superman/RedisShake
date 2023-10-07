@@ -42,7 +42,7 @@ Download the binary package directly from the [Releases](https://github.com/tair
 To compile from source, ensure that you have a Golang environment set up on your local machine:
 
 ```shell
-git clone https://RedisShake/
+git clone https://github.com/alibaba/RedisShake
 cd RedisShake
 sh build.sh
 ```

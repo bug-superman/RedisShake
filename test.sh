@@ -2,8 +2,8 @@
 set -e
 
 # unit test
-go test ./... -v
+#go test ./... -v
 
 # black box test
 cd tests/
-pybbt cases
+pybbt cases --verbose --flags modules

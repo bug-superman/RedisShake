@@ -7,6 +7,8 @@ address = "127.0.0.1:6379" # when cluster is true, set address to one of the clu
 username = ""              # keep empty if not using ACL
 password = ""              # keep empty if no authentication is required
 tls = false
+sync_rdb = true # set to false if you don't want to sync rdb
+sync_aof = true # set to false if you don't want to sync aof
 
 # [scan_reader]
 # cluster = false            # set to true if source is a redis cluster
@@ -19,9 +21,10 @@ tls = false
 # [rdb_reader]
 # filepath = "/tmp/dump.rdb"
 
-#[aof_reader]
-aoffilepath="/tmp/appendonly.aof.manifest"
-aoftimestamp="0"
+# [aof_reader]
+# filepath = "/tmp/.aof"
+# timestamp = 0              # Unix timestamp (millisecond level)
+# filterdangerousCommands="no" 
 
 [redis_writer]
 cluster = false            # set to true if target is a redis cluster

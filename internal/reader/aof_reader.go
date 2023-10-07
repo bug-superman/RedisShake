@@ -1,6 +1,7 @@
 package reader
 
 import (
+	"RedisShake/internal/aof"
 	"os"
 	"path/filepath"
 
@@ -12,8 +13,8 @@ import (
 )
 
 type AOFReaderOptions struct {
-	Filepath                string `mapstructure:"aoffilepath" default:""`
-	AOFTimestamp            int64  `mapstructure:"aoftimestamp" default:"0"`
+	Filepath                string `mapstructure:"filepath" default:""`
+	AOFTimestamp            int64  `mapstructure:"timestamp" default:"0"`
 	FilterDangerousCommands string `mapstructure:"filterdangerousCommands" default:"no"`
 }
 
@@ -69,33 +70,45 @@ func NewAOFReader(opts *AOFReaderOptions) Reader {
 }
 
 func (r *aofReader) StartRead() chan *entry.Entry {
+	//init entry
 	r.ch = make(chan *entry.Entry, 1024)
 
+	// start read aof
 	go func() {
-		AOFFileInfo = *(NewAOFFileInfo(r.path))
-		AOFLoadManifestFromDisk()
-		am := AOFFileInfo.GetAOFManifest()
-		if am == nil {
-			log.Infof("start send AOF path=[%s]", r.path)
+		aofFileInfo := NewAOFFileInfo(r.path, r.ch)
+		// try load manifest file
+		aofFileInfo.AOFLoadManifestFromDisk()
+		manifestInfo := aofFileInfo.AOFManifest
+		if manifestInfo == nil { // load single aof file
+			log.Infof("start send single AOF path=[%s]", r.path)
 			fi, err := os.Stat(r.path)
 			if err != nil {
 				log.Panicf("NewAOFReader: os.Stat error：%s", err.Error())
 			}
 			log.Infof("the file stat:%v", fi)
-			aofLoader := NewLoader(r.path, r.ch)
-			_ = aofLoader.ParsingSingleAppendOnlyFile(AOFFileInfo.GetAOFFileName(), r.ch, true, r.stat.AOFTimestamp, r.stat.FilterDangerousCommands)
-			log.Infof("Send AOF finished. path=[%s]", r.path)
+			aofLoader := aof.NewLoader(r.path, r.ch)
+			ret := aofLoader.LoadSingleAppendOnlyFile(true, r.stat.AOFTimestamp)
+			if ret == AOFOK || ret == AOFTruncated {
+				log.Infof("The AOF File was successfully loaded\n")
+			} else {
+				log.Infof("There was an error opening the AOF File.\n")
+			}
+			log.Infof("Send single AOF finished. path=[%s]", r.path)
 			close(r.ch)
 		} else {
-			log.Infof("start send AOF。path=[%s]", r.path)
-			fi, err := os.Stat(r.path)
+			log.Infof("start send multi-part AOF path=[%s]", r.path)
+			_, err := os.Stat(r.path)
 			if err != nil {
 				log.Panicf("NewAOFReader: os.Stat error：%s", err.Error())
 			}
-			log.Infof("the file stat:%v", fi)
-			aofLoader := NewLoader(r.path, r.ch)
-			_ = aofLoader.LoadAppendOnlyFile(am, r.ch, r.stat.AOFTimestamp, r.stat.FilterDangerousCommands)
-			log.Infof("Send AOF finished. path=[%s]", r.path)
+			aofLoader := NewAOFFileInfo(r.path, r.ch)
+			ret := aofLoader.LoadAppendOnlyFile(manifestInfo, r.ch, r.stat.AOFTimestamp, r.stat.FilterDangerousCommands)
+			if ret == AOFOK || ret == AOFTruncated {
+				log.Infof("The AOF File was successfully loaded\n")
+			} else {
+				log.Infof("There was an error opening the AOF File.\n")
+			}
+			log.Infof("Send multi-part AOF finished. path=[%s]", r.path)
 			close(r.ch)
 		}
 

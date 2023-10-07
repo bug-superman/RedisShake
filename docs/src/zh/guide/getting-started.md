@@ -11,7 +11,7 @@
 要从源代码编译，确保您在本地机器上设置了 Golang 环境：
 
 ```shell
-git clone https://RedisShake/
+git clone https://github.com/alibaba/RedisShake
 cd RedisShake
 sh build.sh
 ```
@@ -38,3 +38,8 @@ address = "127.0.0.1:6380"
 ```shell
 ./redis-shake shake.toml
 ```
+
+## 注意事项
+
+1. 不要在同一个目录运行两个 RedisShake 进程，因为运行时产生的临时文件可能会被覆盖，导致异常行为。
+2. 不要降低 Redis 版本，比如从 6.0 降到 5.0，因为 RedisShake 每个大版本都会引入一些新的命令和新的编码方式，如果降低版本，可能会导致不兼容。
