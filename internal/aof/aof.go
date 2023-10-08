@@ -51,7 +51,7 @@ func ReadCompleteLine(reader *bufio.Reader) ([]byte, error) {
 	return line, err
 }
 
-func (ld *Loader) LoadSingleAppendOnlyFile(LastFile bool, AOFTimeStamp int64) int {
+func (ld *Loader) LoadSingleAppendOnlyFile(AOFTimeStamp int64) int {
 	ret := AOFOK
 	AOFFilepath := ld.filPath
 	fp, err := os.Open(AOFFilepath)
@@ -103,9 +103,9 @@ func (ld *Loader) LoadSingleAppendOnlyFile(LastFile bool, AOFTimeStamp int64) in
 						log.Panicf("Invalid timestamp annotation")
 					}
 
-					if ts > AOFTimeStamp && LastFile {
+					if ts > AOFTimeStamp {
 						ret = AOFTruncated
-						log.Infof("AOFTruncated%s", line)
+						log.Infof("AOFTruncated %s", line)
 						return ret
 					}
 				}
@@ -125,7 +125,6 @@ func (ld *Loader) LoadSingleAppendOnlyFile(LastFile bool, AOFTimeStamp int64) in
 			var argv []string
 
 			for j := 0; j < int(argc); j++ {
-				//line, err := reader.ReadString('\n')
 				line, err := ReadCompleteLine(reader)
 				if err != nil || line[0] != '$' {
 					log.Infof("Bad File format reading the append only File %v:make a backup of your AOF File, then use ./redis-check-AOF --fix <FileName.manifest>", AOFFilepath)

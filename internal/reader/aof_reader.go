@@ -87,11 +87,11 @@ func (r *aofReader) StartRead() chan *entry.Entry {
 			}
 			log.Infof("the file stat:%v", fi)
 			aofLoader := aof.NewLoader(r.path, r.ch)
-			ret := aofLoader.LoadSingleAppendOnlyFile(true, r.stat.AOFTimestamp)
+			ret := aofLoader.LoadSingleAppendOnlyFile(r.stat.AOFTimestamp)
 			if ret == AOFOK || ret == AOFTruncated {
-				log.Infof("The AOF File was successfully loaded\n")
+				log.Infof("The AOF File was successfully loaded")
 			} else {
-				log.Infof("There was an error opening the AOF File.\n")
+				log.Infof("There was an error opening the AOF File.")
 			}
 			log.Infof("Send single AOF finished. path=[%s]", r.path)
 			close(r.ch)
@@ -104,9 +104,9 @@ func (r *aofReader) StartRead() chan *entry.Entry {
 			aofLoader := NewAOFFileInfo(r.path, r.ch)
 			ret := aofLoader.LoadAppendOnlyFile(manifestInfo, r.ch, r.stat.AOFTimestamp, r.stat.FilterDangerousCommands)
 			if ret == AOFOK || ret == AOFTruncated {
-				log.Infof("The AOF File was successfully loaded\n")
+				log.Infof("The AOF File was successfully loaded")
 			} else {
-				log.Infof("There was an error opening the AOF File.\n")
+				log.Infof("There was an error opening the AOF File.")
 			}
 			log.Infof("Send multi-part AOF finished. path=[%s]", r.path)
 			close(r.ch)
