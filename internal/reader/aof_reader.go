@@ -2,7 +2,6 @@ package reader
 
 import (
 	"RedisShake/internal/aof"
-	"os"
 	"path/filepath"
 
 	"RedisShake/internal/entry"
@@ -13,9 +12,8 @@ import (
 )
 
 type AOFReaderOptions struct {
-	Filepath                string `mapstructure:"filepath" default:""`
-	AOFTimestamp            int64  `mapstructure:"timestamp" default:"0"`
-	FilterDangerousCommands string `mapstructure:"filterdangerousCommands" default:"no"`
+	Filepath     string `mapstructure:"filepath" default:""`
+	AOFTimestamp int64  `mapstructure:"timestamp" default:"0"`
 }
 
 type aofReader struct {
@@ -23,16 +21,15 @@ type aofReader struct {
 	ch   chan *entry.Entry
 
 	stat struct {
-		AOFName                 string `json:"aof_name"`
-		AOFStatus               string `json:"aof_status"`
-		AOFFilepath             string `json:"aof_file_path"`
-		AOFFileSizeBytes        int64  `json:"aof_file_size_bytes"`
-		AOFFileSizeHuman        string `json:"aof_file_size_human"`
-		AOFFileSentBytes        int64  `json:"aof_file_sent_bytes"`
-		AOFFileSentHuman        string `json:"aof_file_sent_human"`
-		AOFPercent              string `json:"aof_percent"`
-		AOFTimestamp            int64  `json:"aof_time_stamp"`
-		FilterDangerousCommands string `json:"filter_dangerous_commands"`
+		AOFName          string `json:"aof_name"`
+		AOFStatus        string `json:"aof_status"`
+		AOFFilepath      string `json:"aof_file_path"`
+		AOFFileSizeBytes int64  `json:"aof_file_size_bytes"`
+		AOFFileSizeHuman string `json:"aof_file_size_human"`
+		AOFFileSentBytes int64  `json:"aof_file_sent_bytes"`
+		AOFFileSentHuman string `json:"aof_file_sent_human"`
+		AOFPercent       string `json:"aof_percent"`
+		AOFTimestamp     int64  `json:"aof_time_stamp"`
 	}
 }
 
@@ -65,7 +62,6 @@ func NewAOFReader(opts *AOFReaderOptions) Reader {
 	r.stat.AOFFileSizeBytes = int64(utils.GetFileSize(absolutePath))
 	r.stat.AOFFileSizeHuman = humanize.Bytes(uint64(r.stat.AOFFileSizeBytes))
 	r.stat.AOFTimestamp = opts.AOFTimestamp
-	r.stat.FilterDangerousCommands = opts.FilterDangerousCommands
 	return r
 }
 
@@ -81,14 +77,9 @@ func (r *aofReader) StartRead() chan *entry.Entry {
 		manifestInfo := aofFileInfo.AOFManifest
 		if manifestInfo == nil { // load single aof file
 			log.Infof("start send single AOF path=[%s]", r.path)
-			fi, err := os.Stat(r.path)
-			if err != nil {
-				log.Panicf("NewAOFReader: os.Stat error：%s", err.Error())
-			}
-			log.Infof("the file stat:%v", fi)
 			aofLoader := aof.NewLoader(r.path, r.ch)
 			ret := aofLoader.LoadSingleAppendOnlyFile(r.stat.AOFTimestamp)
-			if ret == AOFOK || ret == AOFTruncated {
+			if ret == AOFOk || ret == AOFTruncated {
 				log.Infof("The AOF File was successfully loaded")
 			} else {
 				log.Infof("There was an error opening the AOF File.")
@@ -96,14 +87,9 @@ func (r *aofReader) StartRead() chan *entry.Entry {
 			log.Infof("Send single AOF finished. path=[%s]", r.path)
 			close(r.ch)
 		} else {
-			log.Infof("start send multi-part AOF path=[%s]", r.path)
-			_, err := os.Stat(r.path)
-			if err != nil {
-				log.Panicf("NewAOFReader: os.Stat error：%s", err.Error())
-			}
 			aofLoader := NewAOFFileInfo(r.path, r.ch)
-			ret := aofLoader.LoadAppendOnlyFile(manifestInfo, r.ch, r.stat.AOFTimestamp, r.stat.FilterDangerousCommands)
-			if ret == AOFOK || ret == AOFTruncated {
+			ret := aofLoader.LoadAppendOnlyFile(manifestInfo, r.stat.AOFTimestamp)
+			if ret == AOFOk || ret == AOFTruncated {
 				log.Infof("The AOF File was successfully loaded")
 			} else {
 				log.Infof("There was an error opening the AOF File.")

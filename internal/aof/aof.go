@@ -98,14 +98,14 @@ func (ld *Loader) LoadSingleAppendOnlyFile(AOFTimeStamp int64) int {
 			if line[0] == '#' {
 				if AOFTimeStamp != 0 && strings.HasPrefix(string(line), "#TS:") {
 					var ts int64
-					ts, err = strconv.ParseInt(strings.TrimPrefix(string(line[1:]), "#TS:"), 10, 64)
+					ts, err = strconv.ParseInt(strings.TrimPrefix(string(line), "#TS:"), 10, 64)
 					if err != nil {
 						log.Panicf("Invalid timestamp annotation")
 					}
 
 					if ts > AOFTimeStamp {
 						ret = AOFTruncated
-						log.Infof("AOFTruncated %s", line)
+						log.Infof("Reached recovery timestamp: %s, subsequent data will no longer be read.", line)
 						return ret
 					}
 				}

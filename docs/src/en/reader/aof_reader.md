@@ -3,13 +3,13 @@
 ## Introduction
 
 Can use ` aof_ Reader 'to read data from the AOF file and then write it to the target end.
- It is commonly used to recover data from backup files and also supports data flash back.
+It is commonly used to recover data from backup files and also supports data flash back.
 
 ## configuration
 
 ```toml
 [aof_reader]
-aoffilepath="/tmp/appendonly.aof.manifest"
+aoffilepath="/tmp/appendonly.aof.manifest" or single-aof: "/tmp/appendonly.aof"
 aoftimestamp="0"
 ```
 

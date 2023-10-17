@@ -2,7 +2,7 @@
 set -e
 
 # unit test
-#go test ./... -v
+go test ./... -v
 
 # black box test
 cd tests/

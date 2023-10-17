@@ -5,11 +5,8 @@ from pathlib import Path
 import pybbt
 
 BASE_PATH = f"{Path(__file__).parent.parent.parent.absolute()}"  # project path
-#PATH_REDIS_SHAKE = f"{BASE_PATH}/bin/redis-shake"
-PATH_REDIS_SHAKE = "/Users/admin/GolandProjects/RedisShake/bin/redis-shake"
-#PATH_REDIS_SERVER = shutil.which('redis-server')
-PATH_REDIS_SERVER = "/Users/admin/CodeProject/redis/src/redis-server"
-# REDIS_SERVER_VERSION
+PATH_REDIS_SHAKE = f"{BASE_PATH}/bin/redis-shake"
+PATH_REDIS_SERVER = shutil.which('redis-server')
 output = subprocess.check_output(f"{PATH_REDIS_SERVER} --version", shell=True)
 output_str = output.decode("utf-8")
 REDIS_SERVER_VERSION = float(output_str.split("=")[1].split(" ")[0][:3])

@@ -60,7 +60,7 @@ func main() {
 		}
 		theReader = reader.NewRDBReader(opts)
 		log.Infof("create RdbReader: %v", opts.Filepath)
-	} else if v.IsSet("aof_reader") { 
+	} else if v.IsSet("aof_reader") {
 		opts := new(reader.AOFReaderOptions)
 		defaults.SetDefaults(opts)
 		err := v.UnmarshalKey("aof_reader", opts)

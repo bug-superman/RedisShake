@@ -52,9 +52,9 @@ class ShakeOpts:
         return d
     
     @staticmethod
-    def create_aof_opts(rdb_path: str, dts: Redis) -> typing.Dict:
+    def create_aof_opts(aof_path: str, dts: Redis, timestamp: int = 0) -> typing.Dict:
         d = {
-            "aof_reader": {"filepath": rdb_path},
+            "aof_reader": {"filepath": aof_path, "timestamp": timestamp},
             "redis_writer": {
                 "cluster": dts.is_cluster(),
                 "address": dts.get_address()

@@ -8,7 +8,7 @@
 
 ```toml
 [aof_reader]
-aoffilepath="/tmp/appendonly.aof.manifest"
+aoffilepath="/tmp/appendonly.aof.manifest" 或者单aof文件 "/tmp/appendonly.aof"
 aoftimestamp="0"
 ```
 
