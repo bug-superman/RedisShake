@@ -61,7 +61,6 @@ func StringNeedsRepr(s string) int {
 
 type INFO struct {
 	AOFDirName         string
-	AOFUseRDBPreamble  int // TODO:not support parsing rdb preamble
 	AOFManifest        *AOFManifest
 	AOFFileName        string
 	AOFCurrentSize     int64
@@ -77,7 +76,6 @@ func (aofInfo *INFO) GetAOFDirName() string {
 func NewAOFFileInfo(aofFilePath string, ch chan *entry.Entry) *INFO {
 	return &INFO{
 		AOFDirName:         filepath.Dir(aofFilePath),
-		AOFUseRDBPreamble:  0,
 		AOFManifest:        nil,
 		AOFFileName:        filepath.Base(aofFilePath),
 		AOFCurrentSize:     0,
@@ -438,7 +436,6 @@ type AOFManifest struct {
 	HistoryList     *list.List
 	CurrBaseFileSeq int64
 	CurrIncrFileSeq int64
-	Dirty           int64
 }
 
 func AOFManifestCreate() *AOFManifest {
@@ -554,6 +551,17 @@ func GetBaseAndIncrAppendOnlyFilesNum(am *AOFManifest) int {
 	return num
 }
 
+func GetHistoryAndIncrAppendOnlyFilesNum(am *AOFManifest) int {
+	num := 0
+	if am.HistoryList != nil {
+		num += am.HistoryList.Len()
+	}
+	if am.incrAOFList != nil {
+		num += am.incrAOFList.Len()
+	}
+	return num
+}
+
 func (aofInfo *INFO) LoadAppendOnlyFile(am *AOFManifest, AOFTimeStamp int64) int {
 	if am == nil {
 		log.Panicf("AOFManifest is null")
@@ -613,6 +621,39 @@ func (aofInfo *INFO) LoadAppendOnlyFile(am *AOFManifest, AOFTimeStamp int64) int
 			}
 		}
 		totalNum--
+	} else {
+		totalNum = GetHistoryAndIncrAppendOnlyFilesNum(am)
+		log.Infof("The BaseAOF file does not exist. Start loading the HistoryAOF and IncrAOF files.")
+		if am.HistoryList.Len() > 0 {
+			for ln := am.HistoryList.Front(); ln != nil; ln = ln.Next() {
+				ai := ln.Value.(*AOFInfo)
+				if ai.AOFFileType != AOFManifestTypeHist {
+					log.Panicf("The manifestType must be Hist")
+				}
+				AOFName = ai.FileName
+				aofInfo.UpdateLoadingFileName(AOFName)
+				AOFNum++
+				start = Ustime()
+				ret = aofInfo.ParsingSingleAppendOnlyFile(AOFName, AOFTimeStamp)
+				if ret == AOFOk || (ret == AOFTruncated) {
+					log.Infof("DB loaded from History File %v: %.3f seconds", AOFName, float64(Ustime()-start)/1000000)
+					return ret
+				}
+				if ret == AOFEmpty {
+					ret = AOFOk
+				}
+				if ret == AOFOpenErr || ret == AOFFailed {
+					if ret == AOFOpenErr {
+						log.Panicf("There was an error opening the AOF File.")
+					} else {
+						log.Infof("Failed to open AOF File.")
+					}
+					return ret
+				}
+				totalNum--
+			}
+		}
+
 	}
 
 	if am.incrAOFList.Len() > 0 {
